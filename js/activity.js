@@ -111,12 +111,6 @@ define(function(require) {
         };
 
         var sounds = [];
-        try {
-            var mic = new p5.AudioIn()
-        } catch (e) {
-            console.log('microphone not available');
-            var mic = null;
-        }
         var stopTurtleContainer = null;
         var stopTurtleContainerX = 0;
         var stopTurtleContainerY = 0;
@@ -1922,12 +1916,7 @@ define(function(require) {
                         currentKeyCode = 0;
                         break;
                     case 'loudness':
-                        if (!mic.enabled) {
-                            mic.start();
-                            blocks.blockList[blk].value = null;
-                        } else {
-                            blocks.blockList[blk].value = Math.round(mic.getLevel() * 1000);
-                        }
+                        blocks.blockList[blk].value = Math.round(getLoudness() * 100);
                         break;
                     default:
                         if (blocks.blockList[blk].name in evalArgDict) {
@@ -2591,7 +2580,55 @@ define(function(require) {
     });
 });
 
+var lastLoudness = undefined;
+function getLoudness(errorMsg) {
+    if (lastLoudness !== undefined) {
+		return lastLoudness;
+    }
 
+    navigator.getMedia = (navigator.getUserMedia ||
+                          navigator.mozGetUserMedia ||
+                          navigator.webkitGetUserMedia ||
+                          navigator.msGetUserMedia);
+    if (navigator.getMedia === undefined) {
+        errorMsg('Your browser does not support the microphone');
+        return 0;
+    }
+
+    navigator.getMedia(
+        {audio: true, video: false}, 
+        function (stream) {
+            var ctx = new AudioContext()
+            var mic = ctx.createMediaStreamSource(stream);
+            var processor = ctx.createScriptProcessor(0, 1, 1);
+            mic.connect(processor);
+            processor.connect(ctx.destination);
+
+            var maxLevel = 0;
+            var lastLevel = 0;
+            processor.onaudioprocess = function (event) {
+                var inpt = event.inputBuffer.getChannelData(0);
+				var instant = 0.0;
+
+				var sum = 0.0;
+				for(var i = 0; i < inpt.length; ++i) {
+					sum += inpt[i] * inpt[i];
+				}
+
+				var instant = Math.sqrt(sum / inpt.length);
+				maxLevel = Math.max(maxLevel, instant);				
+				instant = Math.max(instant, lastLevel - 0.008);
+				lastLevel = instant;
+				lastLoudness = instant / maxLevel;
+            };
+        }, function (error) {
+            errorMsg('Could not connect to microphone');
+            console.log('Could not connect to microphone', error);
+        });
+
+    return 0;
+}
+                
 var hasSetupCamera = false;
 function doUseCamera(args, turtles, turtle, isVideo, cameraID, setCameraID, errorMsg) {
     var w = 320;
